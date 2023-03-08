@@ -1,0 +1,344 @@
+#property indicator_chart_window
+#property indicator_buffers 6
+#property indicator_plots   6
+
+//---- indicator parameters
+input int InpFastEMA=12;
+input int InpSlowEMA=26;
+input int InpSignalSMA=9;
+
+//---- indicator buffers
+double ExtMapBuffer1[];
+double ExtMapBuffer2[];
+double ExtMapBuffer3[];
+double ExtMapBuffer4[];
+double ExtMapBuffer5[];
+double ExtMapBuffer6[];
+
+//---- global variables
+int signal_prev;
+int signal_main;
+
+//+------------------------------------------------------------------+
+//| Custom indicator initialization function                         |
+//+------------------------------------------------------------------+
+int OnInit()
+  {
+//--- indicator buffers mapping
+   SetIndexBuffer(0,ExtMapBuffer1);
+   SetIndexBuffer(1,ExtMapBuffer2);
+   SetIndexBuffer(2,ExtMapBuffer3);
+   SetIndexBuffer(3,ExtMapBuffer4);
+   SetIndexBuffer(4,ExtMapBuffer5);
+   SetIndexBuffer(5,ExtMapBuffer6);
+
+//--- set up plot colors
+   PlotIndexSetInteger(0,PLOT_LINE_COLOR,clrRed);
+   PlotIndexSetInteger(1,PLOT_LINE_COLOR,clrBlue);
+   PlotIndexSetInteger(2,PLOT_COLOR,clrGreen);
+   PlotIndexSetInteger(3,PLOT_COLOR,clrRed);
+   PlotIndexSetInteger(4,PLOT_COLOR,clrYellow);
+   PlotIndexSetInteger(5,PLOT_COLOR,clrDarkOrange);
+
+//--- set up plot labels
+   PlotIndexSetString(0,PLOT_LABEL,"MACD");
+   PlotIndexSetString(1,PLOT_LABEL,"Signal Line");
+   PlotIndexSetString(2,PLOT_LABEL,"Histogram Up");
+   PlotIndexSetString(3,PLOT_LABEL,"Histogram Down");
+   PlotIndexSetString(4,PLOT_LABEL,"Hidden Divergence");
+   PlotIndexSetString(5,PLOT_LABEL,"Regular Divergence");
+
+//--- set up plot styles
+   PlotIndexSetInteger(0,PLOT_STYLE,STYLE_LINE);
+   PlotIndexSetInteger(1,PLOT_STYLE,STYLE_LINE);
+   PlotIndexSetInteger(2,PLOT_STYLE,STYLE_HISTOGRAM);
+   PlotIndexSetInteger(3,PLOT_STYLE,STYLE_HISTOGRAM);
+   PlotIndexSetInteger(4,PLOT_STYLE,STYLE_SOLID);
+   PlotIndexSetInteger(5,PLOT_STYLE,STYLE_SOLID);
+
+//--- set up plot linewidths
+   PlotIndexSetInteger(0,PLOT_LINE_WIDTH,1);
+   PlotIndexSetInteger(1,PLOT_LINE_WIDTH,1);
+   PlotIndexSetInteger(2,PLOT_LINE_WIDTH,1);
+   PlotIndexSetInteger(3,PLOT_LINE_WIDTH,1);
+   PlotIndexSetInteger(4,PLOT_LINE_WIDTH,1);
+   PlotIndexSetInteger(5,PLOT_LINE_WIDTH,1);
+
+//--- initialize global variables
+   signal_prev=0;
+   signal_main=0;
+
+//--- return value of initialization
+   return(INIT_SUCCEEDED);
+  }
+//+------------------------------------------------------------------+
+//| Custom indicator iteration function                              |
+//+------------------------------------------------------------------+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+{
+   int i,limit;
+
+//--- check for bars count and history availability
+   if(rates_total<=InpSlowEMA || prev_calculated<InpSlowEMA)
+      return(0);
+
+//--- calculate the MACD line
+   for(i=limit=prev_calculated; i<rates_total && !IsStopped(); i++)
+     {
+      ExtMapBuffer1[i]=iMA(NULL,0,InpFastEMA,0,MODE_EMA,PRICE_CLOSE,i)-iMA(NULL,0,InpSlowEMA,0,MODE_EMA,PRICE_CLOSE,i);
+     }
+
+//--- calculate the signal line
+   for(i=limit; i<rates_total && !IsStopped(); i++)
+     {
+      ExtMapBuffer2[i]=iMAOnArray(ExtMapBuffer1,rates_total,InpSignalSMA,0,MODE_EMA,i);
+     }
+
+//--- calculate the histogram
+   for(i=limit; i<rates_total && !IsStopped(); i++)
+     {
+      ExtMapBuffer3[i]=ExtMapBuffer1[i]-ExtMapBuffer2[i];
+      if(i>0)
+        {
+         if(ExtMapBuffer3[i]>0 && ExtMapBuffer3[i-1]<0)
+           {
+            ExtMapBuffer4[i]=ExtMapBuffer3[i-1];
+            ExtMapBuffer5[i]=0;
+           }
+         else if(ExtMapBuffer3[i]<0 && ExtMapBuffer3[i-1]>0)
+           {
+            ExtMapBuffer4[i]=0;
+            ExtMapBuffer5[i]=ExtMapBuffer3[i-1];
+           }
+         else
+           {
+            ExtMapBuffer4[i]=0;
+            ExtMapBuffer5[i]=0;
+           }
+        }
+     }
+//--- calculate the divergence
+   for(i=limit; i<rates_total && !IsStopped(); i++)
+     {
+      if(i>0 && ExtMapBuffer1[i]!=ExtMapBuffer2[i])
+        {
+         if(signal_prev==0 && signal_main==0)
+           {
+            if((ExtMapBuffer1[i]>ExtMapBuffer1[i-1] && ExtMapBuffer2[i]<ExtMapBuffer2[i-1]) || (ExtMapBuffer1[i]<ExtMapBuffer1[i-1] && ExtMapBuffer2[i]>ExtMapBuffer2[i-1]))
+              {
+               ExtMapBuffer6[i]=ExtMapBuffer1[i];
+               signal_prev=ExtMapBuffer2[i-1];
+               signal_main=ExtMapBuffer2[i];
+              }
+            else if((ExtMapBuffer1[i]>ExtMapBuffer1[i-1] && ExtMapBuffer2[i]>ExtMapBuffer2[i-1]) || (ExtMapBuffer1[i]<ExtMapBuffer1[i-1] && ExtMapBuffer2[i]<ExtMapBuffer2[i-1]))
+              {
+               ExtMapBuffer5[i]=ExtMapBuffer1[i];
+               signal_prev=ExtMapBuffer2[i-1];
+               signal_main=ExtMapBuffer2[i];
+              }
+           }
+         else if(signal_prev!=0 && signal_main!=0)
+           {
+            if(ExtMapBuffer1[i]>ExtMapBuffer1[i-1] && ExtMapBuffer2[i]<ExtMapBuffer2[i-1] && signal_prev<signal_main)
+              {
+               ExtMapBuffer6[i]=ExtMapBuffer1[i];
+               signal_prev=signal_main;
+               signal_main=ExtMapBuffer2[i];
+              }
+            else if(ExtMapBuffer1[i]<ExtMapBuffer1[i-1] && ExtMapBuffer2[i]>ExtMapBuffer2[i-1] && signal_prev>signal_main)
+              {
+               ExtMapBuffer5[i]=ExtMapBuffer1[i];
+               signal_prev=signal_main;
+               signal_main=ExtMapBuffer2[i];
+              }
+            else
+              {
+               signal_prev=0;
+               signal_main=0;
+              }
+           }
+        }
+}
+//+------------------------------------------------------------------+
+//| Custom MACD                                                      |
+//+------------------------------------------------------------------+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+  {
+//--- check for bars count
+   if(rates_total<BarsRequired) return(0);
+
+//--- initializing arrays
+   ArraySetAsSeries(ExtMapBuffer1,true);
+   ArraySetAsSeries(ExtMapBuffer2,true);
+   ArraySetAsSeries(ExtMapBuffer3,true);
+   ArraySetAsSeries(ExtMapBuffer4,true);
+   ArraySetAsSeries(ExtMapBuffer5,true);
+   ArraySetAsSeries(ExtMapBuffer6,true);
+
+//--- calculate the EMA values for the close price
+   if(prev_calculated==0)
+     {
+      for(i=0; i<EMA_Period; i++)
+        {
+         ExtMapBuffer1[i]=0;
+         ExtMapBuffer2[i]=0;
+        }
+      for(i=EMA_Period; i>=0; i--)
+        {
+         ExtMapBuffer1[i]=i==EMA_Period ? iMA(NULL,0,EMA_Period,0,MODE_EMA,PRICE_CLOSE,i) : (ExtMapBuffer1[i+1]*(EMA_Period-1)+close[i])/EMA_Period;
+         ExtMapBuffer2[i]=i==EMA_Period ? iMA(NULL,0,Signal_Period,0,MODE_EMA,ExtMapBuffer1[i],i) : (ExtMapBuffer2[i+1]*(Signal_Period-1)+ExtMapBuffer1[i])/Signal_Period;
+        }
+     }
+   else
+     {
+      for(i=prev_calculated; i<rates_total && !IsStopped(); i++)
+        {
+         ExtMapBuffer1[i]=i==0 ? iMA(NULL,0,EMA_Period,0,MODE_EMA,PRICE_CLOSE,i) : (ExtMapBuffer1[i-1]*(EMA_Period-1)+close[i])/EMA_Period;
+         ExtMapBuffer2[i]=i==0 ? iMA(NULL,0,Signal_Period,0,MODE_EMA,ExtMapBuffer1[i],i) : (ExtMapBuffer2[i-1]*(Signal_Period-1)+ExtMapBuffer1[i])/Signal_Period;
+        }
+     }
+
+//--- calculate the histogram values
+   for(i=0; i<rates_total && !IsStopped(); i++)
+     {
+      ExtMapBuffer3[i]=ExtMapBuffer1[i]-ExtMapBuffer2[i];
+      ExtMapBuffer4[i]=ExtMapBuffer2[i];
+      ExtMapBuffer5[i]=0;
+      ExtMapBuffer6[i]=0;
+     }
+//--- calculate the divergence
+   for(i=limit; i<rates_total && !IsStopped(); i++)
+     {
+      if(i>0 && ExtMapBuffer1[i]!=ExtMapBuffer2[i])
+        {
+         if(signal_prev==0 && signal_main==0)
+           {
+            if((ExtMapBuffer1[i]>ExtMapBuffer1[i-1] && ExtMapBuffer2[i]<ExtMapBuffer2[i-1]) || (ExtMapBuffer1[i]<ExtMapBuffer1[i-1] && ExtMapBuffer2[i]>ExtMapBuffer2[i-1]))
+              {
+               if(ExtMapBuffer1[i]>ExtMapBuffer1[i-1])
+                 {
+                  signal_main=1;
+                  signal_prev=i;
+                  diverge_high=ExtMapBuffer1[i];
+                 }
+               else
+                 {
+                  signal_main=-1;
+                  signal_prev=i;
+                  diverge_low=ExtMapBuffer1[i];
+                 }
+              }
+           }
+         else
+           {
+            if(signal_main==1 && ExtMapBuffer1[i]>diverge_high)
+              {
+               signal_main=0;
+               if(!hidden)
+                 {
+                  if(!shifted)
+                    {
+                     if(i-diverge_bar<=shift && i-diverge_bar>0)
+                       {
+                        ExtMapBuffer5[i-diverge_bar-1]=iOpen(NULL,0,i);
+                        ExtMapBuffer6[i-diverge_bar-1]=diverge_high;
+                       }
+                    }
+                   else
+                    {
+                     ExtMapBuffer5[i-diverge_bar-1]=iOpen(NULL,0,i);
+                     ExtMapBuffer6[i-diverge_bar-1]=diverge_high;
+                    }
+                 }
+              }
+            else if(signal_main==-1 && ExtMapBuffer1[i]<diverge_low)
+              {
+               signal_main=0;
+               if(!hidden)
+                 {
+                  if(!shifted)
+                    {
+                     if(i-diverge_bar<=shift && i-diverge_bar>0)
+                       {
+                        ExtMapBuffer5[i-diverge_bar-1]=iOpen(NULL,0,i);
+                        ExtMapBuffer6[i-diverge_bar-1]=diverge_low;
+                       }
+                    }
+                   else
+                    {
+                     ExtMapBuffer5[i-diverge_bar-1]=iOpen(NULL,0,i);
+                     ExtMapBuffer6[i-diverge_bar-1]=diverge_low;
+                    }
+                 }
+              }
+           }
+        }
+     }
+//+------------------------------------------------------------------+
+//| Custom indicator iteration function                              |
+//+------------------------------------------------------------------+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+  {
+   int limit=rates_total-prev_calculated;
+
+   //--- check for bars count
+   if(rates_total<IndicatorCounted())
+      return(0);
+
+   //--- set necessary arrays
+   ArraySetAsSeries(ExtMapBuffer1,true);
+   ArraySetAsSeries(ExtMapBuffer2,true);
+   ArraySetAsSeries(ExtMapBuffer3,true);
+   ArraySetAsSeries(ExtMapBuffer4,true);
+   ArraySetAsSeries(ExtMapBuffer5,true);
+   ArraySetAsSeries(ExtMapBuffer6,true);
+
+   //--- calculate the MACD
+   if(indicators.calculate(_symbol,_period,MACD_FAST_EMA_PERIOD,MACD_SLOW_EMA_PERIOD,MACD_SIGNAL_PERIOD,PRICE_CLOSE,ExtMapBuffer1,ExtMapBuffer2,ExtMapBuffer3)<0)
+     return(0);
+
+   //--- draw the MACD
+   for(int i=0; i<limit && !IsStopped(); i++)
+     {
+      ExtMapBuffer4[i]=0.0;
+      ExtMapBuffer5[i]=0.0;
+      ExtMapBuffer6[i]=0.0;
+      if(ExtMapBuffer1[rates_total-1-i]>ExtMapBuffer2[rates_total-1-i])
+         ExtMapBuffer4[i]=ExtMapBuffer1[rates_total-1-i]-ExtMapBuffer2[rates_total-1-i];
+      else
+         ExtMapBuffer4[i]=ExtMapBuffer2[rates_total-1-i]-ExtMapBuffer1[rates_total-1-i];
+     }
+
+   //--- calculate the divergence
+   CalculateDivergence(rates_total,limit,ExtMapBuffer1,ExtMapBuffer2,ExtMapBuffer3,ExtMapBuffer4,ExtMapBuffer5,ExtMapBuffer6);
+
+   return(rates_total);
+  }
+//+------------------------------------------------------------------+
